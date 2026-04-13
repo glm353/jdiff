@@ -26,7 +26,15 @@ Python 3.10+.
 
 ## Credentials
 
-Live fetch mode reads credentials from a `.env` file in the repo root. `npe` and `prd` have **separate** credentials because each JWT is env-scoped:
+Live fetch mode reads credentials from a `.env` file in the repo root. `npe` and `prd` have **separate** credentials because each JWT is env-scoped.
+
+Copy the template and fill in real values:
+
+```bash
+cp .env.example .env
+```
+
+Then edit `.env`:
 
 ```
 X_API_KEY=<npe api key>
@@ -35,7 +43,7 @@ PRD_API_KEY=<prd api key>
 PRD_JWT_TOKEN=<prd JWT>
 ```
 
-`.env` is already in `.gitignore`. Never commit it.
+`.env` is already in `.gitignore`. Never commit it. `.env.example` is safe to commit — it only contains placeholders.
 
 ## Usage
 
