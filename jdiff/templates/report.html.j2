@@ -1,0 +1,207 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>GraphQL Schema Diff — {{ old_name }} → {{ new_name }}</title>
+<style>
+  body { font-family: -apple-system, Segoe UI, sans-serif; max-width: 1400px; margin: 2em auto; padding: 0 1em; color: #222; }
+  .layout { display: flex; gap: 2em; align-items: flex-start; }
+  .layout > main { flex: 1; min-width: 0; }
+  h1 { border-bottom: 2px solid #333; padding-bottom: .3em; }
+  h2 { margin-top: 2em; border-bottom: 1px solid #ccc; padding-bottom: .2em; }
+  h3 { margin-top: 1.4em; font-size: 1.05em; }
+  h4 { margin: 1em 0 .3em; font-size: .95em; color: #555; text-transform: uppercase; letter-spacing: .05em; }
+  code { background: #f4f4f4; padding: 1px 4px; border-radius: 3px; font-size: 0.92em; }
+  table { border-collapse: collapse; width: 100%; margin: .3em 0 1.2em; font-size: .9em; table-layout: fixed; }
+  th, td { border: 1px solid #ddd; padding: 6px 8px; vertical-align: top; text-align: left; word-wrap: break-word; }
+  th { background: #f4f4f4; font-weight: 600; }
+  tr:nth-child(even) td { background: #fafafa; }
+  td.desc, td.before, td.after { white-space: pre-wrap; font-family: ui-monospace, Consolas, monospace; font-size: .82em; }
+  td.path, td.name, td.field { font-family: ui-monospace, Consolas, monospace; font-size: .85em; white-space: nowrap; }
+  tr.added td:first-child { border-left: 3px solid #0a7f2e; }
+  tr.removed td:first-child { border-left: 3px solid #b00020; }
+  tr.changed td:first-child { border-left: 3px solid #2858a0; }
+  span.del { background: #ffd7d7; color: #8a0018; text-decoration: line-through; display: inline-block; width: 100%; padding: 0 2px; }
+  span.ins { background: #d4f7d4; color: #0a5a1f; display: inline-block; width: 100%; padding: 0 2px; }
+  nav.toc { background: #f7f9fc; border: 1px solid #dde3ec; border-radius: 5px; padding: 1em 1.2em; width: 260px; flex-shrink: 0; position: sticky; top: 1em; max-height: calc(100vh - 2em); overflow-y: auto; font-size: .88em; }
+  nav.toc h2 { margin: 0 0 .5em; border: none; font-size: .9em; text-transform: uppercase; letter-spacing: .05em; color: #555; }
+  nav.toc ul { margin: 0; padding-left: 1.1em; list-style: none; }
+  nav.toc ul ul { padding-left: .9em; border-left: 1px solid #dde3ec; margin-top: .3em; }
+  nav.toc li { line-height: 1.55; }
+  nav.toc a { text-decoration: none; color: #2858a0; }
+  nav.toc a:hover { text-decoration: underline; }
+  h2, h3 { scroll-margin-top: 1em; }
+  .added { color: #0a7f2e; }
+  .removed { color: #b00020; }
+  .changed { color: #2858a0; }
+  .empty { color: #888; font-style: italic; }
+</style>
+</head>
+<body>
+
+{% set other_changed = [] %}
+{% for td in diff.types_changed %}
+  {% if td.name != diff.query_type and td.name != diff.mutation_type %}
+    {% set _ = other_changed.append(td) %}
+  {% endif %}
+{% endfor %}
+
+<div class="layout">
+
+<nav class="toc">
+  <h2>Contents</h2>
+  <ul>
+    <li><a href="#top">Top</a></li>
+    <li><a href="#query">Query ({{ diff.query_type or "—" }})</a></li>
+    <li><a href="#mutation">Mutation ({{ diff.mutation_type or "—" }})</a></li>
+    <li><a href="#types-added">Types added ({{ diff.types_added|length }})</a></li>
+    <li><a href="#types-removed">Types removed ({{ diff.types_removed|length }})</a></li>
+    <li>
+      <a href="#other-type-changes">Other type changes ({{ other_changed|length }})</a>
+      {% if other_changed %}
+      <ul>
+        {% for td in other_changed %}
+          <li><a href="#{{ td.name|slug }}">{{ td.name }}</a></li>
+        {% endfor %}
+      </ul>
+      {% endif %}
+    </li>
+  </ul>
+</nav>
+
+<main>
+
+<h1 id="top">GraphQL Schema Diff</h1>
+<p><code>{{ old_name }}</code> → <code>{{ new_name }}</code></p>
+
+{% macro fields_table(fields, row_class) %}
+  <table>
+    <colgroup><col style="width:22%"><col style="width:22%"><col style="width:56%"></colgroup>
+    <thead><tr><th>Field</th><th>Type</th><th>Description</th></tr></thead>
+    <tbody>
+      {% for f in fields %}
+        <tr class="{{ row_class }}">
+          <td class="field">{{ f.name }}</td>
+          <td class="field">{{ f.type_sig }}</td>
+          <td class="desc">{{ f.description or "" }}</td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+{% endmacro %}
+
+{% macro changed_table(changes) %}
+  <table>
+    <colgroup><col style="width:26%"><col style="width:10%"><col style="width:32%"><col style="width:32%"></colgroup>
+    <thead><tr><th>Path</th><th>Change</th><th>{{ old_name }}</th><th>{{ new_name }}</th></tr></thead>
+    <tbody>
+      {% for c in changes %}
+        {% set d = inline_diff(c.before, c.after) %}
+        <tr class="changed">
+          <td class="path">{{ c.path }}</td>
+          <td>{{ c.kind }}</td>
+          <td class="before">{{ d[0] }}</td>
+          <td class="after">{{ d[1] }}</td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+{% endmacro %}
+
+{% macro enum_table(values, row_class, change_label) %}
+  <table>
+    <colgroup><col style="width:60%"><col style="width:40%"></colgroup>
+    <thead><tr><th>Value</th><th>Change</th></tr></thead>
+    <tbody>
+      {% for v in values %}
+        <tr class="{{ row_class }}">
+          <td class="name">{{ v }}</td>
+          <td>{{ change_label }}</td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+{% endmacro %}
+
+{% macro type_block(td) %}
+  {% if td and not td.empty %}
+    {% if td.fields_added %}
+      <h4 class="added">Fields added</h4>
+      {{ fields_table(td.fields_added, "added") }}
+    {% endif %}
+    {% if td.fields_removed %}
+      <h4 class="removed">Fields removed</h4>
+      {{ fields_table(td.fields_removed, "removed") }}
+    {% endif %}
+    {% if td.fields_changed %}
+      <h4 class="changed">Fields changed</h4>
+      {{ changed_table(td.fields_changed) }}
+    {% endif %}
+    {% if td.enum_added %}
+      <h4 class="added">Enum values added</h4>
+      {{ enum_table(td.enum_added, "added", "added") }}
+    {% endif %}
+    {% if td.enum_removed %}
+      <h4 class="removed">Enum values removed</h4>
+      {{ enum_table(td.enum_removed, "removed", "removed") }}
+    {% endif %}
+  {% endif %}
+{% endmacro %}
+
+{% macro types_table(types, row_class) %}
+  <table>
+    <colgroup><col style="width:60%"><col style="width:40%"></colgroup>
+    <thead><tr><th>Name</th><th>Kind</th></tr></thead>
+    <tbody>
+      {% for t in types %}
+        <tr class="{{ row_class }}">
+          <td class="name">{{ t.name }}</td>
+          <td>{{ t.kind }}</td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+{% endmacro %}
+
+<h2 id="query">Query ({{ diff.query_type or "—" }})</h2>
+{% if diff.query_diff and not diff.query_diff.empty %}
+  {{ type_block(diff.query_diff) }}
+{% else %}
+  <p class="empty">No changes.</p>
+{% endif %}
+
+<h2 id="mutation">Mutation ({{ diff.mutation_type or "—" }})</h2>
+{% if diff.mutation_diff and not diff.mutation_diff.empty %}
+  {{ type_block(diff.mutation_diff) }}
+{% else %}
+  <p class="empty">No changes.</p>
+{% endif %}
+
+<h2 id="types-added" class="added">Types added</h2>
+{% if diff.types_added %}
+  {{ types_table(diff.types_added, "added") }}
+{% else %}
+  <p class="empty">None.</p>
+{% endif %}
+
+<h2 id="types-removed" class="removed">Types removed</h2>
+{% if diff.types_removed %}
+  {{ types_table(diff.types_removed, "removed") }}
+{% else %}
+  <p class="empty">None.</p>
+{% endif %}
+
+<h2 id="other-type-changes">Other type changes</h2>
+{% if other_changed %}
+  {% for td in other_changed %}
+    <h3 id="{{ td.name|slug }}">{{ td.name }}</h3>
+    {{ type_block(td) }}
+  {% endfor %}
+{% else %}
+  <p class="empty">None.</p>
+{% endif %}
+
+</main>
+</div>
+</body>
+</html>
