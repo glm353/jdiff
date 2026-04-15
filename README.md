@@ -11,6 +11,8 @@ See [CLAUDE.md](CLAUDE.md) for full design notes.
 - **Static HTML + Markdown output** — both formats paste cleanly into Confluence.
 - **Internal-content filter** — anything whose description contains `**INTERNAL`, `JDR Internal`, or `JDR-ONLY` is dropped from both sides before diffing.
 - **Readable reports** — every section is a table, Before/After columns are labelled with the actual input filenames, and long multi-line descriptions render with inline diff highlighting (red strikethrough for removed lines, green for added).
+- **Unified per-type table** — every type section renders as a single table (`Path | Change | <old> | <new>`) sorted alphabetically by path, so added / removed / changed fields, arg changes, and enum values for the same field cluster together instead of splitting across five sub-tables. Row-level left-border accents still signal change category (green / red / blue).
+- **HTML change-kind filter** — toolbar at the top of the HTML report with one checkbox per change kind (`description`, `type`, `field added`, `arg_changed`, …). All checked by default; untick `description` (or hit the **Hide description** preset) to collapse description noise once reviewed. State persists in `localStorage` across reloads. Markdown output is unfiltered (Confluence renders no JS).
 - **Sticky Table of Contents** — pinned left sidebar with links to Query, Mutation, Types added/removed, and each individually-changed type.
 
 ## Install
@@ -110,6 +112,7 @@ jdiff/
 tests/
   test_diff.py
   test_fetch.py
+  test_render.py
 ```
 
 ## Tests
@@ -120,6 +123,7 @@ pytest
 
 - `test_diff.py` covers add / remove / change / arg-diff / internal-filter / swap-inverts against tiny synthetic schemas.
 - `test_fetch.py` stubs `requests.post` via `monkeypatch` to assert target parsing, URL template, request headers (`x-api-key`, `Authorization: Bearer ...`, `Content-Type`), and error paths (non-200, GraphQL errors). No network calls.
+- `test_render.py` covers the unified-row flattener (sort order, row-class mapping across all change kinds) and asserts the HTML filter toolbar + `data-kind` row attributes are emitted.
 
 ## Troubleshooting
 
