@@ -11,6 +11,79 @@ from .diff import SchemaDiff, TypeDiff
 
 _TEMPLATE_DIR = Path(__file__).parent / "templates"
 
+# All change kinds that can appear in the unified table's Change column.
+# Used to build the HTML filter toolbar. Order is rendering/display order.
+CHANGE_KINDS: list[str] = [
+    "field added",
+    "field removed",
+    "type",
+    "description",
+    "arg_added",
+    "arg_removed",
+    "arg_changed",
+    "enum added",
+    "enum removed",
+]
+
+
+def _field_body(type_sig: str, description: str | None) -> str:
+    desc = description or ""
+    if desc:
+        return f"{type_sig}\n\n{desc}"
+    return type_sig
+
+
+def _unified_rows(td: TypeDiff) -> list[dict]:
+    """Flatten a TypeDiff into a single sorted list of row dicts.
+
+    Each row has keys: path, kind, before, after, row_class.
+    Sort is alphabetical by path, then kind, so changes for the same
+    field cluster together.
+    """
+    rows: list[dict] = []
+    for f in td.fields_added:
+        rows.append({
+            "path": f.name,
+            "kind": "field added",
+            "before": "",
+            "after": _field_body(f.type_sig, f.description),
+            "row_class": "added",
+        })
+    for f in td.fields_removed:
+        rows.append({
+            "path": f.name,
+            "kind": "field removed",
+            "before": _field_body(f.type_sig, f.description),
+            "after": "",
+            "row_class": "removed",
+        })
+    for c in td.fields_changed:
+        rows.append({
+            "path": c.path,
+            "kind": c.kind,
+            "before": c.before or "",
+            "after": c.after or "",
+            "row_class": "changed",
+        })
+    for v in td.enum_added:
+        rows.append({
+            "path": v,
+            "kind": "enum added",
+            "before": "",
+            "after": v,
+            "row_class": "added",
+        })
+    for v in td.enum_removed:
+        rows.append({
+            "path": v,
+            "kind": "enum removed",
+            "before": v,
+            "after": "",
+            "row_class": "removed",
+        })
+    rows.sort(key=lambda r: (r["path"].lower(), r["kind"]))
+    return rows
+
 
 def _env() -> Environment:
     return Environment(
@@ -61,9 +134,15 @@ def _slug(value: str) -> str:
 def render_html(diff: SchemaDiff, old_name: str, new_name: str) -> str:
     env = _env()
     env.globals["inline_diff"] = _inline_diff_html
+    env.globals["unified_rows"] = _unified_rows
     env.filters["slug"] = _slug
     tmpl = env.get_template("report.html.j2")
-    return tmpl.render(diff=diff, old_name=old_name, new_name=new_name)
+    return tmpl.render(
+        diff=diff,
+        old_name=old_name,
+        new_name=new_name,
+        change_kinds=CHANGE_KINDS,
+    )
 
 
 def _md_cell(value: object) -> str:
@@ -122,48 +201,14 @@ def _md_table(headers: list[str], rows: list[list[str]]) -> list[str]:
 
 
 def _type_block_md(td: TypeDiff, old_name: str, new_name: str) -> list[str]:
-    lines: list[str] = []
-    if td.fields_added:
-        lines.append("**Fields added**")
-        lines.append("")
-        lines.extend(
-            _md_table(
-                ["Field", "Type", "Description"],
-                [
-                    [_md_cell(f.name), _md_cell(f.type_sig), _md_cell(f.description)]
-                    for f in td.fields_added
-                ],
-            )
-        )
-    if td.fields_removed:
-        lines.append("**Fields removed**")
-        lines.append("")
-        lines.extend(
-            _md_table(
-                ["Field", "Type", "Description"],
-                [
-                    [_md_cell(f.name), _md_cell(f.type_sig), _md_cell(f.description)]
-                    for f in td.fields_removed
-                ],
-            )
-        )
-    if td.fields_changed:
-        lines.append("**Fields changed**")
-        lines.append("")
-        rows = []
-        for c in td.fields_changed:
-            before_md, after_md = _inline_diff_md(c.before, c.after)
-            rows.append([_md_cell(c.path), _md_cell(c.kind), before_md, after_md])
-        lines.extend(_md_table(["Path", "Change", old_name, new_name], rows))
-    if td.enum_added:
-        lines.append("**Enum values added**")
-        lines.append("")
-        lines.extend(_md_table(["Value", "Change"], [[_md_cell(v), "added"] for v in td.enum_added]))
-    if td.enum_removed:
-        lines.append("**Enum values removed**")
-        lines.append("")
-        lines.extend(_md_table(["Value", "Change"], [[_md_cell(v), "removed"] for v in td.enum_removed]))
-    return lines
+    rows = _unified_rows(td)
+    if not rows:
+        return []
+    table_rows = []
+    for r in rows:
+        before_md, after_md = _inline_diff_md(r["before"], r["after"])
+        table_rows.append([_md_cell(r["path"]), _md_cell(r["kind"]), before_md, after_md])
+    return _md_table(["Path", "Change", old_name, new_name], table_rows)
 
 
 def render_markdown(diff: SchemaDiff, old_name: str, new_name: str) -> str:

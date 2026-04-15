@@ -35,6 +35,14 @@
   .removed { color: #b00020; }
   .changed { color: #2858a0; }
   .empty { color: #888; font-style: italic; }
+  .filters { background: #f7f9fc; border: 1px solid #dde3ec; border-radius: 5px; padding: .7em 1em; margin: 1em 0 1.5em; font-size: .85em; display: flex; flex-wrap: wrap; align-items: center; gap: .4em 1em; }
+  .filters .label { color: #555; text-transform: uppercase; letter-spacing: .05em; font-size: .78em; font-weight: 600; margin-right: .3em; }
+  .filters label.kind { cursor: pointer; font-family: ui-monospace, Consolas, monospace; font-size: .85em; color: #333; user-select: none; }
+  .filters label.kind input { margin-right: .25em; vertical-align: middle; }
+  .filters .sep { width: 1px; align-self: stretch; background: #dde3ec; margin: 0 .2em; }
+  .filters .preset { padding: .25em .7em; border: 1px solid #c3cad6; background: #fff; border-radius: 3px; cursor: pointer; font-size: .82em; color: #2858a0; }
+  .filters .preset:hover { background: #eef2fa; border-color: #2858a0; }
+  td.change-kind { font-family: ui-monospace, Consolas, monospace; font-size: .82em; white-space: nowrap; }
 </style>
 </head>
 <body>
@@ -74,32 +82,26 @@
 <h1 id="top">GraphQL Schema Diff</h1>
 <p><code>{{ old_name }}</code> → <code>{{ new_name }}</code></p>
 
-{% macro fields_table(fields, row_class) %}
-  <table>
-    <colgroup><col style="width:22%"><col style="width:22%"><col style="width:56%"></colgroup>
-    <thead><tr><th>Field</th><th>Type</th><th>Description</th></tr></thead>
-    <tbody>
-      {% for f in fields %}
-        <tr class="{{ row_class }}">
-          <td class="field">{{ f.name }}</td>
-          <td class="field">{{ f.type_sig }}</td>
-          <td class="desc">{{ f.description or "" }}</td>
-        </tr>
-      {% endfor %}
-    </tbody>
-  </table>
-{% endmacro %}
+<div class="filters" id="filters">
+  <span class="label">Show</span>
+  {% for k in change_kinds %}
+    <label class="kind"><input type="checkbox" class="kind-filter" value="{{ k }}" checked>{{ k }}</label>
+  {% endfor %}
+  <span class="sep"></span>
+  <button type="button" class="preset" id="hide-desc-preset">Hide description</button>
+  <button type="button" class="preset" id="show-all">Show all</button>
+</div>
 
-{% macro changed_table(changes) %}
+{% macro unified_table(rows) %}
   <table>
-    <colgroup><col style="width:26%"><col style="width:10%"><col style="width:32%"><col style="width:32%"></colgroup>
+    <colgroup><col style="width:26%"><col style="width:12%"><col style="width:31%"><col style="width:31%"></colgroup>
     <thead><tr><th>Path</th><th>Change</th><th>{{ old_name }}</th><th>{{ new_name }}</th></tr></thead>
     <tbody>
-      {% for c in changes %}
-        {% set d = inline_diff(c.before, c.after) %}
-        <tr class="changed">
-          <td class="path">{{ c.path }}</td>
-          <td>{{ c.kind }}</td>
+      {% for r in rows %}
+        {% set d = inline_diff(r.before, r.after) %}
+        <tr class="{{ r.row_class }}" data-kind="{{ r.kind }}">
+          <td class="path">{{ r.path }}</td>
+          <td class="change-kind">{{ r.kind }}</td>
           <td class="before">{{ d[0] }}</td>
           <td class="after">{{ d[1] }}</td>
         </tr>
@@ -108,43 +110,10 @@
   </table>
 {% endmacro %}
 
-{% macro enum_table(values, row_class, change_label) %}
-  <table>
-    <colgroup><col style="width:60%"><col style="width:40%"></colgroup>
-    <thead><tr><th>Value</th><th>Change</th></tr></thead>
-    <tbody>
-      {% for v in values %}
-        <tr class="{{ row_class }}">
-          <td class="name">{{ v }}</td>
-          <td>{{ change_label }}</td>
-        </tr>
-      {% endfor %}
-    </tbody>
-  </table>
-{% endmacro %}
-
 {% macro type_block(td) %}
   {% if td and not td.empty %}
-    {% if td.fields_added %}
-      <h4 class="added">Fields added</h4>
-      {{ fields_table(td.fields_added, "added") }}
-    {% endif %}
-    {% if td.fields_removed %}
-      <h4 class="removed">Fields removed</h4>
-      {{ fields_table(td.fields_removed, "removed") }}
-    {% endif %}
-    {% if td.fields_changed %}
-      <h4 class="changed">Fields changed</h4>
-      {{ changed_table(td.fields_changed) }}
-    {% endif %}
-    {% if td.enum_added %}
-      <h4 class="added">Enum values added</h4>
-      {{ enum_table(td.enum_added, "added", "added") }}
-    {% endif %}
-    {% if td.enum_removed %}
-      <h4 class="removed">Enum values removed</h4>
-      {{ enum_table(td.enum_removed, "removed", "removed") }}
-    {% endif %}
+    {% set rows = unified_rows(td) %}
+    {{ unified_table(rows) }}
   {% endif %}
 {% endmacro %}
 
@@ -203,5 +172,63 @@
 
 </main>
 </div>
+
+<script>
+(function () {
+  var STORAGE_KEY = "jdiff-shown-kinds-v2";
+  var boxes = document.querySelectorAll(".kind-filter");
+  var rows = document.querySelectorAll("tr[data-kind]");
+
+  function loadShown() {
+    try {
+      var raw = localStorage.getItem(STORAGE_KEY);
+      if (!raw) return null;
+      var parsed = JSON.parse(raw);
+      return Array.isArray(parsed) ? parsed : null;
+    } catch (e) { return null; }
+  }
+  function saveShown(list) {
+    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(list)); } catch (e) {}
+  }
+
+  function applyFromBoxes() {
+    var shown = [];
+    boxes.forEach(function (b) { if (b.checked) shown.push(b.value); });
+    var sset = {};
+    shown.forEach(function (k) { sset[k] = true; });
+    rows.forEach(function (tr) {
+      tr.style.display = sset[tr.getAttribute("data-kind")] ? "" : "none";
+    });
+    saveShown(shown);
+  }
+
+  // Restore state — if nothing stored, leave defaults (all checked).
+  var stored = loadShown();
+  if (stored) {
+    var sset = {};
+    stored.forEach(function (k) { sset[k] = true; });
+    boxes.forEach(function (b) { b.checked = !!sset[b.value]; });
+  }
+  applyFromBoxes();
+
+  boxes.forEach(function (b) { b.addEventListener("change", applyFromBoxes); });
+
+  var presetDesc = document.getElementById("hide-desc-preset");
+  if (presetDesc) {
+    presetDesc.addEventListener("click", function () {
+      boxes.forEach(function (b) { b.checked = (b.value !== "description"); });
+      applyFromBoxes();
+    });
+  }
+  var showAll = document.getElementById("show-all");
+  if (showAll) {
+    showAll.addEventListener("click", function () {
+      boxes.forEach(function (b) { b.checked = true; });
+      applyFromBoxes();
+    });
+  }
+})();
+</script>
+
 </body>
 </html>
