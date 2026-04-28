@@ -10,6 +10,7 @@ is fetched live from the Plus Suite GraphQL API using credentials from .env.
 from __future__ import annotations
 
 import argparse
+import datetime
 import json
 import os
 from pathlib import Path
@@ -41,29 +42,43 @@ def _load_creds(env: str) -> tuple[str, str]:
     return api_key, jwt_token
 
 
-def _resolve_input(value: str, cache_dir: Path, no_cache: bool) -> Path:
-    """Return a filesystem path for `value`.
+def _today() -> str:
+    return datetime.date.today().strftime("%Y%m%d")
+
+
+def _resolve_input(value: str, cache_dir: Path, no_cache: bool) -> tuple[Path, str]:
+    """Return (filesystem path, YYYYMMDD export date) for `value`.
 
     If `value` is of the form `env:api`, fetch the schema (or reuse a cached
     copy under `cache_dir`). Otherwise treat `value` as a file path.
     """
     target = parse_target(value)
     if target is None:
-        return Path(value)
+        return Path(value), _today()
 
     env, api = target
     cache_dir.mkdir(parents=True, exist_ok=True)
     cache_path = cache_dir / f"{env}_{api}.json"
+    meta_path = cache_dir / f"{env}_{api}_meta.json"
 
     if cache_path.exists() and not no_cache:
         print(f"using cached {cache_path}")
-        return cache_path
+        date = _today()
+        if meta_path.exists():
+            try:
+                meta = json.loads(meta_path.read_text(encoding="utf-8"))
+                date = meta.get("fetched_at", date)
+            except Exception:
+                pass
+        return cache_path, date
 
     api_key, jwt_token = _load_creds(env)
     print(f"fetching {env}:{api} → {cache_path}")
     payload = fetch_schema(env, api, api_key=api_key, jwt_token=jwt_token)
+    date = _today()
     cache_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
-    return cache_path
+    meta_path.write_text(json.dumps({"fetched_at": date}), encoding="utf-8")
+    return cache_path, date
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -92,14 +107,25 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="Force refetching env:api targets even if a cached JSON exists.",
     )
+    p.add_argument(
+        "--date",
+        metavar="YYYYMMDD",
+        default=None,
+        help="Override the export date shown in the report and appended to output filenames.",
+    )
+    p.add_argument(
+        "--no-date",
+        action="store_true",
+        help="Suppress the date suffix on output filenames.",
+    )
     args = p.parse_args(argv)
 
     out = Path(args.out)
     out.parent.mkdir(parents=True, exist_ok=True)
     cache_dir = out.parent
 
-    old_path = _resolve_input(args.old, cache_dir, args.no_cache)
-    new_path = _resolve_input(args.new, cache_dir, args.no_cache)
+    old_path, old_date = _resolve_input(args.old, cache_dir, args.no_cache)
+    new_path, new_date = _resolve_input(args.new, cache_dir, args.no_cache)
 
     old_schema = load_schema(old_path)
     new_schema = load_schema(new_path)
@@ -108,14 +134,20 @@ def main(argv: list[str] | None = None) -> int:
     old_name = old_path.stem
     new_name = new_path.stem
 
+    # Explicit --date wins; otherwise use the later of the two sides.
+    export_date = args.date if args.date else max(old_date, new_date)
+
+    # Build the output path prefix, optionally appending the date.
+    out_prefix = out if args.no_date else out.parent / f"{out.name}_{export_date}"
+
     formats = {f.strip().lower() for f in args.format.split(",") if f.strip()}
     if "html" in formats:
-        html_path = out.with_suffix(".html")
-        html_path.write_text(render_html(d, old_name, new_name), encoding="utf-8")
+        html_path = out_prefix.with_suffix(".html")
+        html_path.write_text(render_html(d, old_name, new_name, export_date=export_date), encoding="utf-8")
         print(f"wrote {html_path}")
     if "md" in formats:
-        md_path = out.with_suffix(".md")
-        md_path.write_text(render_markdown(d, old_name, new_name), encoding="utf-8")
+        md_path = out_prefix.with_suffix(".md")
+        md_path.write_text(render_markdown(d, old_name, new_name, export_date=export_date), encoding="utf-8")
         print(f"wrote {md_path}")
 
     return 0

@@ -131,7 +131,13 @@ def _slug(value: str) -> str:
     return "type-" + "".join(ch if ch.isalnum() else "-" for ch in str(value)).strip("-").lower()
 
 
-def render_html(diff: SchemaDiff, old_name: str, new_name: str) -> str:
+def _fmt_date(d: str) -> str:
+    if len(d) == 8 and d.isdigit():
+        return f"{d[:4]}-{d[4:6]}-{d[6:]}"
+    return d
+
+
+def render_html(diff: SchemaDiff, old_name: str, new_name: str, export_date: str | None = None) -> str:
     env = _env()
     env.globals["inline_diff"] = _inline_diff_html
     env.globals["unified_rows"] = _unified_rows
@@ -142,6 +148,7 @@ def render_html(diff: SchemaDiff, old_name: str, new_name: str) -> str:
         old_name=old_name,
         new_name=new_name,
         change_kinds=CHANGE_KINDS,
+        export_date=export_date,
     )
 
 
@@ -211,10 +218,13 @@ def _type_block_md(td: TypeDiff, old_name: str, new_name: str) -> list[str]:
     return _md_table(["Path", "Change", old_name, new_name], table_rows)
 
 
-def render_markdown(diff: SchemaDiff, old_name: str, new_name: str) -> str:
+def render_markdown(diff: SchemaDiff, old_name: str, new_name: str, export_date: str | None = None) -> str:
     lines: list[str] = []
     lines.append(f"# GraphQL Schema Diff: `{old_name}` → `{new_name}`")
     lines.append("")
+    if export_date:
+        lines.append(f"_Snapshot date: {_fmt_date(export_date)}_")
+        lines.append("")
 
     lines.append(f"## Query ({diff.query_type or '—'})")
     lines.append("")

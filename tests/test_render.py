@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from jdiff.diff import FieldChange, SchemaDiff, TypeDiff
 from jdiff.load import Field
-from jdiff.render import _unified_rows, render_html
+from jdiff.render import _unified_rows, render_html, render_markdown
 
 
 def _sample_td() -> TypeDiff:
@@ -46,3 +46,27 @@ def test_html_has_filter_toolbar_and_data_kind():
     assert 'data-kind="description"' in html
     assert 'data-kind="field added"' in html
     assert 'id="hide-desc-preset"' in html
+
+
+def _empty_diff() -> SchemaDiff:
+    return SchemaDiff(query_type="Query")
+
+
+def test_html_export_date_present():
+    html = render_html(_empty_diff(), "old", "new", export_date="20260428")
+    assert "Snapshot date: 20260428" in html
+
+
+def test_html_export_date_absent():
+    html = render_html(_empty_diff(), "old", "new")
+    assert "Snapshot date" not in html
+
+
+def test_markdown_export_date_present():
+    md = render_markdown(_empty_diff(), "old", "new", export_date="20260428")
+    assert "_Snapshot date: 2026-04-28_" in md
+
+
+def test_markdown_export_date_absent():
+    md = render_markdown(_empty_diff(), "old", "new")
+    assert "Snapshot date" not in md

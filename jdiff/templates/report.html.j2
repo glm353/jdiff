@@ -43,6 +43,7 @@
   .filters .preset { padding: .25em .7em; border: 1px solid #c3cad6; background: #fff; border-radius: 3px; cursor: pointer; font-size: .82em; color: #2858a0; }
   .filters .preset:hover { background: #eef2fa; border-color: #2858a0; }
   td.change-kind { font-family: ui-monospace, Consolas, monospace; font-size: .82em; white-space: nowrap; }
+  .export-date { color: #666; font-size: .85em; margin-top: .1em; }
 </style>
 </head>
 <body>
@@ -81,6 +82,9 @@
 
 <h1 id="top">GraphQL Schema Diff</h1>
 <p><code>{{ old_name }}</code> → <code>{{ new_name }}</code></p>
+{% if export_date %}
+<p class="export-date">Snapshot date: {{ export_date }}</p>
+{% endif %}
 
 <div class="filters" id="filters">
   <span class="label">Show</span>
